@@ -1,107 +1,207 @@
-import streamlit as st
+import json
+
 import pandas as pd
 import plotly.express as px
-import json
+import streamlit as st
+
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import cross_val_score, StratifiedKFold
-from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import accuracy_score
-from src.ml_models import TARGETS, fit_single_target, predict_single, available_features
-from src.data_utils import load_exact_process_rows, load_demo_training
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.pipeline import Pipeline
+
+from src.data_utils import load_demo_training, load_exact_process_rows
+from src.ml_models import TARGETS, fit_single_target, predict_single
+
 
 st.title("Machine-Learning Workbench")
-st.caption("Regression when enough real numerical rows exist; classification/benchmarking when exact data are still sparse.")
+st.caption(
+    "Regression when enough real numerical rows exist; classification and benchmarking when exact data are still sparse."
+)
 
 exact = load_exact_process_rows()
 demo = load_demo_training()
 
 source_mode = st.radio(
     "Training data",
-    ["Exact literature rows only", "Exact + demo rows for interface testing", "Upload CSV"],
-    horizontal=True
+    [
+        "Exact literature rows only",
+        "Exact + demo rows for interface testing",
+        "Upload CSV",
+    ],
+    horizontal=True,
 )
 
 if source_mode == "Exact literature rows only":
     df = exact.copy()
     default_strict = True
+
 elif source_mode == "Exact + demo rows for interface testing":
     df = pd.concat([exact, demo], ignore_index=True, sort=False)
     default_strict = False
-    st.warning("Demo rows are included. Use this only to test the ML interface; do not report these metrics as literature validation.")
+
+    st.warning(
+        "Demo rows are included. Use this only to test the ML interface; do not report these metrics as literature validation."
+    )
+
 else:
     file = st.file_uploader("Upload training CSV", type=["csv"])
+
     if file is None:
         st.stop()
+
     df = pd.read_csv(file)
     default_strict = True
 
 st.subheader("Dataset")
 st.dataframe(df, use_container_width=True, height=240)
 
-strict = st.checkbox("Exclude demo rows from regression training", value=default_strict)
+strict = st.checkbox(
+    "Exclude demo rows from regression training",
+    value=default_strict,
+)
+
 train_df = df.copy()
+
 if strict and "data_quality" in train_df.columns:
-    train_df = train_df[~train_df["data_quality"].astype(str).str.contains("demo", case=False, na=False)]
+    train_df = train_df[
+        ~train_df["data_quality"]
+        .astype(str)
+        .str.contains("demo", case=False, na=False)
+    ]
 
 st.subheader("Target coverage")
+
 coverage = []
-for t in TARGETS:
-    if t in train_df.columns:
-        coverage.append({"target": t, "non_null_rows_after_filter": int(pd.to_numeric(train_df[t], errors="coerce").notna().sum())})
+
+for target in TARGETS:
+    if target in train_df.columns:
+        coverage.append(
+            {
+                "target": target,
+                "non_null_rows_after_filter": int(
+                    pd.to_numeric(train_df[target], errors="coerce").notna().sum()
+                ),
+            }
+        )
+
 coverage_df = pd.DataFrame(coverage)
-st.dataframe(coverage_df, use_container_width=True)
 
-available_regression_targets = coverage_df[coverage_df["non_null_rows_after_filter"] >= 8]["target"].tolist() if len(coverage_df) else []
+if len(coverage_df) == 0:
+    st.warning("No supported ML targets found in the current dataset.")
+else:
+    st.dataframe(coverage_df, use_container_width=True)
 
-tab_reg, tab_class, tab_notes = st.tabs(["Regression", "Functional classification", "Why sparse data is okay"])
+available_regression_targets = []
+
+if len(coverage_df):
+    available_regression_targets = coverage_df[
+        coverage_df["non_null_rows_after_filter"] >= 8
+    ]["target"].tolist()
+
+tab_reg, tab_class, tab_notes = st.tabs(
+    [
+        "Regression",
+        "Functional classification",
+        "Why sparse data is okay",
+    ]
+)
 
 with tab_reg:
     if not available_regression_targets:
-        st.warning("No regression target has at least 8 non-null rows after the current filter.")
-        st.markdown("""
-This is not a bug. The exact extracted dataset currently contains strong **process/function labels**, but not enough row-level density, DSC, tensile or hysteresis values for a defensible regression model.
+        st.warning(
+            "No regression target has at least 8 non-null rows after the current filter."
+        )
+
+        st.markdown(
+            """
+This is not a bug.
+
+The exact extracted dataset currently contains strong **process/function labels**, but not enough row-level density, DSC, tensile or hysteresis values for defensible regression.
 
 Use one of these options:
 
 1. Switch to **Exact + demo rows** and uncheck demo exclusion to test the interface.
 2. Upload your own CSV with row-level values for `Af_C`, `relative_density_pct`, `hysteresis_K`, `UTS_MPa`, etc.
 3. Continue using the exact dataset for **classification and benchmark comparison**, which is valid now.
-""")
+"""
+        )
+
     else:
         c1, c2 = st.columns(2)
+
         target = c1.selectbox("Regression target", available_regression_targets)
-        model_kind = c2.selectbox("Model", ["Gaussian Process", "Random Forest", "Extra Trees", "Gradient Boosting"])
+
+        model_kind = c2.selectbox(
+            "Model",
+            [
+                "Gaussian Process",
+                "Random Forest",
+                "Extra Trees",
+                "Gradient Boosting",
+            ],
+        )
 
         try:
-            model, cols, metrics = fit_single_target(df, target, model_kind=model_kind, strict_real_only=strict)
-        except Exception as e:
-            st.error(str(e))
+            model, cols, metrics = fit_single_target(
+                df,
+                target,
+                model_kind=model_kind,
+                strict_real_only=strict,
+            )
+        except Exception as error:
+            st.error(str(error))
             st.stop()
 
         m1, m2, m3, m4 = st.columns(4)
+
         m1.metric("Rows used", metrics["n_rows"])
         m2.metric("CV R²", f"{metrics['r2_mean']:.3f} ± {metrics['r2_std']:.3f}")
         m3.metric("CV MAE", f"{metrics['mae_mean']:.3f}")
         m4.metric("CV RMSE", f"{metrics['rmse_mean']:.3f}")
 
         st.subheader("Prediction panel")
+
         values = {}
         cols_ui = st.columns(4)
-        for i, col in enumerate(cols):
-            default = float(pd.to_numeric(df[col], errors="coerce").median())
-            values[col] = cols_ui[i % 4].number_input(col, value=default)
 
-        mean, std = predict_single(model, cols, values, model_kind=model_kind)
-        st.metric(f"Predicted {target}", f"{mean:.3f}" if std is None else f"{mean:.3f} ± {std:.3f}")
+        for i, col in enumerate(cols):
+            default_value = float(pd.to_numeric(df[col], errors="coerce").median())
+
+            values[col] = cols_ui[i % 4].number_input(
+                col,
+                value=default_value,
+                key=f"regression_input_{col}",
+            )
+
+        mean, std = predict_single(
+            model,
+            cols,
+            values,
+            model_kind=model_kind,
+        )
+
+        if std is None:
+            st.metric(f"Predicted {target}", f"{mean:.3f}")
+        else:
+            st.metric(f"Predicted {target}", f"{mean:.3f} ± {std:.3f}")
 
         if "VED_J_mm3" in df.columns:
             fig = px.scatter(
-                df, x="VED_J_mm3", y=target,
+                df,
+                x="VED_J_mm3",
+                y=target,
                 color="data_quality" if "data_quality" in df.columns else None,
-                hover_data=[c for c in ["source_id", "sample_id"] if c in df.columns]
+                hover_data=[
+                    c for c in ["source_id", "sample_id"] if c in df.columns
+                ],
             )
-            fig.add_hline(y=mean, line_dash="dash", annotation_text="current prediction")
+
+            fig.add_hline(
+                y=mean,
+                line_dash="dash",
+                annotation_text="current prediction",
+            )
+
             st.plotly_chart(fig, use_container_width=True)
 
         model_card = {
@@ -110,55 +210,148 @@ Use one of these options:
             "features": cols,
             "metrics": metrics,
             "strict_real_only": strict,
-            "warning": "Metrics are defensible only when trained on exact_table/exact_text/digitized_figure rows, not demo_synthetic rows."
+            "warning": (
+                "Metrics are defensible only when trained on exact_table, exact_text "
+                "or digitized_figure rows, not demo_synthetic rows."
+            ),
         }
-        st.download_button("Download model card JSON", json.dumps(model_card, indent=2), "model_card.json")
+
+        st.download_button(
+            "Download model card JSON",
+            json.dumps(model_card, indent=2),
+            "model_card.json",
+        )
 
 with tab_class:
-    st.markdown("""
+    st.markdown(
+        """
 The current exact literature rows are already useful for a **functional class classifier** because each row has a process condition and a label such as excellent, partial, or poor/not tested.
-""")
-    features = [c for c in ["laser_power_W", "scan_speed_mm_s", "hatch_spacing_mm", "layer_thickness_mm", "VED_J_mm3", "powder_Ni_at_pct", "measured_Ni_at_pct"] if c in exact.columns]
-    class_df = exact.dropna(subset=["functional_class"]).copy()
-    if len(class_df) >= 8 and len(features) >= 2:
-        X = class_df[features]
-        y = class_df["functional_class"].astype(str)
-        clf = Pipeline([
-            ("imputer", SimpleImputer(strategy="median")),
-            ("model", RandomForestClassifier(n_estimators=300, random_state=42, min_samples_leaf=1))
-        ])
-        cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
-        try:
-            scores = cross_val_score(clf, X, y, cv=cv, scoring="accuracy")
-            st.metric("Exact-row classification CV accuracy", f"{scores.mean():.2f} ± {scores.std():.2f}")
-        except Exception:
-            st.info("Class distribution is small; cross-validation is unstable, but the classifier can still be fitted for demonstration.")
-        clf.fit(X, y)
+"""
+    )
 
-        st.subheader("Classify a new process")
-        values = {}
-        cols = st.columns(4)
-        for i, col in enumerate(features):
-            default = float(pd.to_numeric(exact[col], errors="coerce").median())
-            values[col] = cols[i % 4].number_input(f"classifier_{col}", value=default, key=f"class_{col}")
-        pred = clf.predict(pd.DataFrame([values]))[0]
-        proba = clf.predict_proba(pd.DataFrame([values]))[0]
-        st.metric("Predicted functional class", pred)
-        st.dataframe(pd.DataFrame({"class": clf.classes_, "probability": proba}).sort_values("probability", ascending=False), use_container_width=True)
+    features = [
+        c
+        for c in [
+            "laser_power_W",
+            "scan_speed_mm_s",
+            "hatch_spacing_mm",
+            "layer_thickness_mm",
+            "VED_J_mm3",
+            "powder_Ni_at_pct",
+            "measured_Ni_at_pct",
+        ]
+        if c in exact.columns
+    ]
 
-        fig = px.scatter(
-            exact, x="VED_J_mm3", y="laser_power_W",
-            color="functional_class", hover_data=["sample_id", "functional_observation"]
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    if "functional_class" not in exact.columns:
+        st.warning("The exact dataset has no `functional_class` column.")
+
     else:
-        st.warning("Not enough exact functional-class data.")
+        class_df = exact.dropna(subset=["functional_class"]).copy()
+
+        if len(class_df) >= 8 and len(features) >= 2:
+            X = class_df[features]
+            y = class_df["functional_class"].astype(str)
+
+            clf = Pipeline(
+                [
+                    ("imputer", SimpleImputer(strategy="median")),
+                    (
+                        "model",
+                        RandomForestClassifier(
+                            n_estimators=300,
+                            random_state=42,
+                            min_samples_leaf=1,
+                        ),
+                    ),
+                ]
+            )
+
+            try:
+                cv = StratifiedKFold(
+                    n_splits=3,
+                    shuffle=True,
+                    random_state=42,
+                )
+
+                scores = cross_val_score(
+                    clf,
+                    X,
+                    y,
+                    cv=cv,
+                    scoring="accuracy",
+                )
+
+                st.metric(
+                    "Exact-row classification CV accuracy",
+                    f"{scores.mean():.2f} ± {scores.std():.2f}",
+                )
+
+            except Exception:
+                st.info(
+                    "Class distribution is small; cross-validation is unstable, but the classifier can still be fitted for demonstration."
+                )
+
+            clf.fit(X, y)
+
+            st.subheader("Classify a new process")
+
+            values = {}
+            cols = st.columns(4)
+
+            for i, col in enumerate(features):
+                default_value = float(pd.to_numeric(exact[col], errors="coerce").median())
+
+                values[col] = cols[i % 4].number_input(
+                    col,
+                    value=default_value,
+                    key=f"classifier_input_{col}",
+                )
+
+            prediction = clf.predict(pd.DataFrame([values]))[0]
+            probability = clf.predict_proba(pd.DataFrame([values]))[0]
+
+            st.metric("Predicted functional class", prediction)
+
+            st.dataframe(
+                pd.DataFrame(
+                    {
+                        "class": clf.classes_,
+                        "probability": probability,
+                    }
+                ).sort_values("probability", ascending=False),
+                use_container_width=True,
+            )
+
+            if "VED_J_mm3" in exact.columns:
+                fig = px.scatter(
+                    exact,
+                    x="VED_J_mm3",
+                    y="laser_power_W",
+                    color="functional_class",
+                    hover_data=[
+                        c
+                        for c in [
+                            "sample_id",
+                            "functional_observation",
+                            "microstructure_observation",
+                        ]
+                        if c in exact.columns
+                    ],
+                )
+
+                st.plotly_chart(fig, use_container_width=True)
+
+        else:
+            st.warning("Not enough exact functional-class data.")
 
 with tab_notes:
-    st.markdown("""
+    st.markdown(
+        """
 ### Why the app refuses some regression runs
 
-If a target has zero exact rows, a regression model would be fake.  
+If a target has zero exact rows, a regression model would be fake.
+
 For example, `relative_density_pct` is in the schema, but the current exact A1-D4 table does not provide row-level density values. Therefore the app should not train density regression on exact data yet.
 
 ### What to add next
@@ -179,6 +372,8 @@ To make ML top-level, extract these row-level columns from papers:
 
 ### Strong model strategy
 
-Use exact rows only for reported metrics. Use demo rows only to test the app.  
-When the benchmark grows beyond ~100 rows, compare Gaussian Process, Extra Trees, Random Forest, SVR/GRNN and XGBoost-like models under the same external validation split.
-""")
+Use exact rows only for reported metrics. Use demo rows only to test the app.
+
+When the benchmark grows beyond about 100 rows, compare Gaussian Process, Extra Trees, Random Forest, SVR/GRNN and XGBoost-like models under the same external validation split.
+"""
+    )
