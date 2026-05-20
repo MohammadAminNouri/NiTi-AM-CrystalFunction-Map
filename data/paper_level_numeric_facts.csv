@@ -1,0 +1,37 @@
+source_id,doi,fact_name,field,value,unit,data_quality,notes
+Crystallography2020,10.3390/cryst10070562,B2 lattice parameter,B2_a_A,3.015,Å,exact_text,Used in crystallography defaults
+Crystallography2020,10.3390/cryst10070562,B19′ lattice parameter a,B19p_a_A,2.89,Å,exact_text,Used in crystallography defaults
+Crystallography2020,10.3390/cryst10070562,B19′ lattice parameter b,B19p_b_A,4.12,Å,exact_text,Used in crystallography defaults
+Crystallography2020,10.3390/cryst10070562,B19′ lattice parameter c,B19p_c_A,4.62,Å,exact_text,Used in crystallography defaults
+Crystallography2020,10.3390/cryst10070562,B19′ monoclinic angle,B19p_beta_deg,96.8,degree,exact_text,Used in crystallography defaults
+Crystallography2020,10.3390/cryst10070562,Reference Ms,Ms_C,45.0,°C,exact_text,Reference B19′ NiTi bar
+Crystallography2020,10.3390/cryst10070562,Reference Mf,Mf_C,35.0,°C,exact_text,Reference B19′ NiTi bar
+Crystallography2020,10.3390/cryst10070562,Reference As,As_C,60.0,°C,exact_text,Reference B19′ NiTi bar
+Crystallography2020,10.3390/cryst10070562,Reference Af,Af_C,90.0,°C,exact_text,Reference B19′ NiTi bar
+Xiang2024_Metals,10.3390/met14090961,Ni sensitivity,TT_shift_per_0p1_Ni_C,-10.0,°C per +0.1 at.% Ni,exact_text,TTs decrease about 10C per +0.1 at.% Ni
+Xiang2024_Metals,10.3390/met14090961,Powder particle size min,powder_size_min_um,15.0,µm,exact_text,Powder size range
+Xiang2024_Metals,10.3390/met14090961,Powder particle size max,powder_size_max_um,57.0,µm,exact_text,Powder size range
+Xiang2024_Metals,10.3390/met14090961,Good superelastic energy window min,VED_good_min_J_mm3,66.7,J/mm³,exact_text,Low-energy window with excellent superelasticity
+Xiang2024_Metals,10.3390/met14090961,Good superelastic energy window max,VED_good_max_J_mm3,116.7,J/mm³,exact_text,Low-energy window with excellent superelasticity
+Xiang2024_Metals,10.3390/met14090961,High-energy poor window min,VED_poor_min_J_mm3,166.7,J/mm³,exact_text,High TT and almost no superelasticity
+Xiang2024_Metals,10.3390/met14090961,High-energy poor window max,VED_poor_max_J_mm3,233.3,J/mm³,exact_text,High TT and almost no superelasticity
+Xiang2024_Metals,10.3390/met14090961,Ms range min,Ms_min_C,-68.1,°C,exact_text,Across studied VED range
+Xiang2024_Metals,10.3390/met14090961,Ms range max,Ms_max_C,54.9,°C,exact_text,Across studied VED range
+Xiang2024_Metals,10.3390/met14090961,Af range min,Af_min_C,-24.1,°C,exact_text,Across studied VED range
+Xiang2024_Metals,10.3390/met14090961,Af range max,Af_max_C,86.9,°C,exact_text,Across studied VED range
+Xiang2024_Metals,10.3390/met14090961,Phase transformation stress min,transformation_stress_min_MPa,111.6,MPa,exact_text,Reported range
+Xiang2024_Metals,10.3390/met14090961,Phase transformation stress max,transformation_stress_max_MPa,653.8,MPa,exact_text,Reported range
+Xiang2024_Metals,10.3390/met14090961,Yield stress min,yield_stress_min_MPa,1022.7,MPa,exact_text,Reported range
+Xiang2024_Metals,10.3390/met14090961,Yield stress max,yield_stress_max_MPa,1308.0,MPa,exact_text,Reported range
+Xiang2024_Metals,10.3390/met14090961,Stress-strain hysteresis min,stress_strain_hysteresis_min_mJ_mm3,1.8,mJ/mm³,exact_text,Reported range
+Xiang2024_Metals,10.3390/met14090961,Stress-strain hysteresis max,stress_strain_hysteresis_max_mJ_mm3,3.9,mJ/mm³,exact_text,Reported range
+Xue2021_Acta,10.1016/j.actamat.2021.117017,Tensile ductility up to,ductility_max_pct,16.0,%,abstract,Fully dense near-equiatomic and Ni-rich NiTi
+Xue2021_Acta,10.1016/j.actamat.2021.117017,Shape memory strain,shape_memory_strain_pct,6.0,%,abstract,Process-optimization framework
+Xue2021_Acta,10.1016/j.actamat.2021.117017,Tensile superelasticity up to,tensile_superelasticity_pct,4.0,%,abstract,Ni50.1Ti49.9 and Ni50.8Ti49.2
+Xue2022_Acta,10.1016/j.actamat.2022.117781,Tensile superelasticity up to,tensile_superelasticity_pct,6.0,%,abstract,Defect-free NiTi with superior tensile superelasticity
+Li2024_VPP,10.1080/17452759.2024.2364221,ML dataset size,dataset_entries,195.0,rows,abstract,Across 23 publications
+Li2024_VPP,10.1080/17452759.2024.2364221,ML literature count,dataset_publications,23.0,publications,abstract,Multi-output ML model
+Li2024_VPP,10.1080/17452759.2024.2364221,Optimized UTS,optimized_UTS_MPa,783.0,MPa,abstract,Multi-objective optimized validation
+Li2024_VPP,10.1080/17452759.2024.2364221,Optimized elongation,optimized_elongation_pct,13.7,%,abstract,Multi-objective optimized validation
+Li2024_VPP,10.1080/17452759.2024.2364221,Optimized hysteresis,optimized_hysteresis_K,15.1,K,abstract,Multi-objective optimized validation
+Carcavilla2026_SciRep,10.1038/s41598-026-44034-1,Sample count,sample_count,200.0,plus samples,abstract,Systematic power-speed study
