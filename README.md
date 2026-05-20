@@ -1,6 +1,3 @@
-
-
-````markdown
 # NiTi-AM CrystalFunction Map
 
 **NiTi-AM CrystalFunction Map** is a Streamlit-based research platform for **laser powder bed fusion (LPBF / PBF-LB/M) of NiTi shape-memory alloys**.
@@ -17,7 +14,6 @@ LPBF parameters
 → literature benchmark comparison
 → ML-assisted prediction when enough real data exist
 → SEM / XRD / EBSD result analysis
-````
 
 The central question is:
 
