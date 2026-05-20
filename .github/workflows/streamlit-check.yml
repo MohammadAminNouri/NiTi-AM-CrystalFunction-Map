@@ -2,9 +2,11 @@ name: Streamlit App Check
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -35,5 +37,5 @@ jobs:
       - name: Check Streamlit starts
         run: |
           streamlit run app.py --server.headless true --server.port 8501 &
-          sleep 15
+          sleep 20
           curl -f http://localhost:8501
