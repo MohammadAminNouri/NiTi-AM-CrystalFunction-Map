@@ -28,7 +28,7 @@ desktop.ini
 # Streamlit secrets
 .streamlit/secrets.toml
 
-# Local environment variables
+# Environment variables
 .env
 .env.*
 !.env.example
@@ -40,7 +40,7 @@ desktop.ini
 *.log
 logs/
 
-# Model artifacts / heavy local outputs
+# Model artifacts / heavy outputs
 models/*.joblib
 models/*.pkl
 models/*.h5
@@ -53,13 +53,13 @@ outputs/
 tmp/
 temp/
 
-# Raw local data that should not be committed
+# Raw/private local data
 data/raw/
 data/private/
 data/*.xlsx
 data/*.xls
 
-# Keep important CSV benchmark data
+# Keep benchmark CSV data
 !data/*.csv
 
 # Uploaded user files
