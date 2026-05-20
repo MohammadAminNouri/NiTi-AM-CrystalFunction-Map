@@ -1,4 +1,6 @@
+# =========================
 # Python cache
+# =========================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -8,39 +10,65 @@ __pycache__/
 .coverage
 htmlcov/
 
+# =========================
 # Virtual environments
+# =========================
 .venv/
 venv/
 env/
 ENV/
 
-# OS junk
+# =========================
+# OS files
+# =========================
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# IDE/editor junk
+# =========================
+# IDE / editor files
+# =========================
 .vscode/
 .idea/
 *.swp
 *.swo
 
+# =========================
 # Streamlit secrets
+# Keep config.toml, ignore secrets.toml
+# =========================
 .streamlit/secrets.toml
 
+# =========================
 # Environment variables
+# =========================
 .env
 .env.*
 !.env.example
 
-# Jupyter checkpoints
+# =========================
+# Jupyter
+# =========================
 .ipynb_checkpoints/
+*.ipynb_checkpoints
 
+# =========================
 # Logs
+# =========================
 *.log
 logs/
 
-# Model artifacts / heavy outputs
+# =========================
+# Temporary files
+# =========================
+tmp/
+temp/
+outputs/
+uploads/
+
+# =========================
+# Model artifacts
+# =========================
 models/*.joblib
 models/*.pkl
 models/*.h5
@@ -48,24 +76,28 @@ models/*.pt
 models/*.pth
 models/*.onnx
 
-# Temporary outputs
-outputs/
-tmp/
-temp/
-
-# Raw/private local data
+# =========================
+# Large/private/raw data
+# =========================
 data/raw/
 data/private/
 data/*.xlsx
 data/*.xls
 
-# Keep benchmark CSV data
+# Keep benchmark CSV files
 !data/*.csv
 
-# Uploaded user files
-uploads/
-
-# Build artifacts
+# =========================
+# Build/package artifacts
+# =========================
 build/
 dist/
 *.egg-info/
+
+# =========================
+# Local archives
+# =========================
+*.zip
+*.tar
+*.tar.gz
+*.rar
