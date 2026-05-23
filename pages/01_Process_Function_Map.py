@@ -237,8 +237,26 @@ proc = ProcessInput(
 ved = volumetric_energy_density(proc)
 led = linear_energy_density(proc)
 risks = defect_risks(ved)
-evap = ni_evaporation_risk(ved, remelt, oxygen)
-eff_Ni = estimate_composition_shift(powder_Ni, evap, measured_Ni)
+from src.vaporization_model import VaporizationInput, compute_vaporization_composition
+
+vap_inp = VaporizationInput(
+    laser_power_W=P,
+    scan_speed_mm_s=v,
+    hatch_spacing_mm=h,
+    layer_thickness_mm=t,
+    powder_Ni_at_pct=powder_Ni,
+    build_plate_C=build_T,
+    remelt_passes=remelt,
+    oxygen_ppm=oxygen,
+)
+
+vap_out = compute_vaporization_composition(vap_inp)
+
+if measured_Ni is not None:
+    eff_Ni = measured_Ni
+else:
+    eff_Ni = vap_out["final_Ni_at_pct"]
+
 temps = transformation_temperature_rule(eff_Ni, heat_T, heat_min)
 func = functional_score(temps, service_T, risks, target_mode)
 
