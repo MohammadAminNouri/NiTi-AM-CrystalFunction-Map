@@ -1,24 +1,21 @@
 """
 Physics-informed vaporization / composition-shift model for LPBF NiTi.
 
-This module is a lightweight screening surrogate inspired by integrated
-LPBF vaporization models. It is NOT a full heat-fluid-flow solver and it
-does NOT replace DSC, ICP/EDS, XRD, SEM, EBSD/TKD, or mechanical testing.
+This is a screening surrogate, not a full CFD/CALPHAD model.
 
-Purpose in this repository:
-    LPBF parameters
-    -> melt-pool thermal proxy
-    -> Ni/Ti vaporization tendency
-    -> final effective Ni at.%
-    -> transformation-temperature shift
-    -> functional risk map
+Purpose:
+LPBF parameters
+-> hot-surface temperature proxy
+-> Ni/Ti vaporization tendency
+-> final effective Ni at.%
+-> transformation-temperature shift
+-> functional risk map
 
-Main assumptions:
-    1. Binary Ni-Ti alloy.
-    2. Ideal first-pass activity model: partial pressure = x_i * P_i^pure.
-    3. Peak temperature and pool dimensions are empirical/screening proxies.
-    4. Remelting is represented by a transparent multiplier.
-    5. Outputs are meant for process-window comparison, not certification.
+Important correction:
+The evaporation temperature must represent the molten-pool free surface / hot
+spot, not the average melt-pool temperature. If the estimated surface
+temperature is too low, vapor pressure becomes almost zero and the dashboard
+shows no composition consequence, which is not useful for LPBF NiTi screening.
 """
 
 from __future__ import annotations
@@ -27,10 +24,9 @@ from dataclasses import dataclass
 import math
 from typing import Dict, List
 
-R_GAS = 8.314462618  # J/(mol K)
+R_GAS = 8.314462618
 ATM_PA = 101325.0
 
-# Atomic / molar data
 MOLAR_MASS_KG_MOL = {
     "Ni": 58.6934e-3,
     "Ti": 47.867e-3,
@@ -41,13 +37,13 @@ MOLAR_MASS_G_MOL = {
     "Ti": 47.867,
 }
 
-# Approximate boiling points and vaporization enthalpies.
-# These are used only for a transparent Clausius-Clapeyron vapor-pressure proxy.
+# Approximate elemental boiling points
 BOILING_K = {
     "Ni": 3186.0,
     "Ti": 3560.0,
 }
 
+# Approximate vaporization enthalpies
 DELTA_H_VAP_J_MOL = {
     "Ni": 377_000.0,
     "Ti": 425_000.0,
@@ -65,20 +61,17 @@ class VaporizationInput:
     powder_Ni_at_pct: float = 51.30
 
     beam_diameter_um: float = 80.0
-    absorptivity: float = 0.35
+    absorptivity: float = 0.38
     build_plate_C: float = 80.0
 
     remelt_passes: int = 0
     oxygen_ppm: float = 70.0
 
-    # Langmuir accommodation/calibration parameter.
-    # Higher value = stronger evaporation.
-    # Keep this adjustable because real values depend on gas flow, pressure,
-    # plume, surface condition, and calibration against measured composition.
-    accommodation_coeff: float = 0.25
+    # Keep this small. This is not the same as saying the physical
+    # accommodation is exactly this value; it is a lumped screening factor.
+    accommodation_coeff: float = 0.08
 
-    # Extra global calibration factor. Keep at 1.0 unless you have measured
-    # ICP/EDS data and want to calibrate the surrogate.
+    # Use this only for calibration against measured EDS/ICP.
     calibration_scale: float = 1.0
 
 
@@ -92,29 +85,18 @@ def volumetric_energy_density(
     hatch_spacing_mm: float,
     layer_thickness_mm: float,
 ) -> float:
-    """VED in J/mm^3."""
     if scan_speed_mm_s <= 0 or hatch_spacing_mm <= 0 or layer_thickness_mm <= 0:
         return float("nan")
     return laser_power_W / (scan_speed_mm_s * hatch_spacing_mm * layer_thickness_mm)
 
 
 def linear_energy_density(laser_power_W: float, scan_speed_mm_s: float) -> float:
-    """Linear energy density in J/mm."""
     if scan_speed_mm_s <= 0:
         return float("nan")
     return laser_power_W / scan_speed_mm_s
 
 
 def at_percent_to_wt_fractions(ni_at_pct: float) -> Dict[str, float]:
-    """
-    Convert Ni at.% to Ni/Ti weight fractions.
-
-    Input:
-        ni_at_pct = atomic percent Ni, e.g. 51.3
-
-    Output:
-        {"Ni": wt_fraction_Ni, "Ti": wt_fraction_Ti}
-    """
     ni_at_pct = _clamp(ni_at_pct, 0.0, 100.0)
     ti_at_pct = 100.0 - ni_at_pct
 
@@ -129,7 +111,6 @@ def at_percent_to_wt_fractions(ni_at_pct: float) -> Dict[str, float]:
 
 
 def wt_fractions_to_ni_at_percent(ni_wt: float, ti_wt: float) -> float:
-    """Convert Ni/Ti weight fractions back to Ni at.%."""
     ni_wt = max(0.0, ni_wt)
     ti_wt = max(0.0, ti_wt)
 
@@ -143,13 +124,23 @@ def wt_fractions_to_ni_at_percent(ni_wt: float, ti_wt: float) -> float:
     return 100.0 * ni_moles / total_moles
 
 
-def estimate_peak_surface_temperature_K(p: VaporizationInput) -> float:
+def estimate_hot_surface_temperature_K(p: VaporizationInput) -> float:
     """
-    Screening proxy for top-surface peak temperature.
+    Hot free-surface temperature proxy.
 
-    It intentionally uses P, v, hatch, layer thickness, absorptivity and build
-    plate temperature, not VED alone. This is not CFD; it is a monotonic proxy
-    for comparing nearby LPBF conditions.
+    This is the important corrected part.
+
+    For evaporation, we need the laser-side molten-pool surface/hot spot,
+    not the average melt-pool temperature. Evaporation becomes significant
+    only when the local surface temperature approaches the boiling range.
+
+    The function is intentionally monotonic:
+    - higher power increases T
+    - slower scan increases T
+    - higher absorptivity increases T
+    - thinner layers increase T
+    - smaller beam diameter increases intensity
+    - remelting adds repeated thermal exposure
     """
     ved = volumetric_energy_density(
         p.laser_power_W,
@@ -157,38 +148,37 @@ def estimate_peak_surface_temperature_K(p: VaporizationInput) -> float:
         p.hatch_spacing_mm,
         p.layer_thickness_mm,
     )
+    led = linear_energy_density(p.laser_power_W, p.scan_speed_mm_s)
 
-    if math.isnan(ved):
+    if math.isnan(ved) or math.isnan(led):
         return float("nan")
 
-    layer_um = p.layer_thickness_mm * 1000.0
+    beam_factor = (80.0 / max(p.beam_diameter_um, 20.0)) ** 0.35
+    layer_factor = (0.030 / max(p.layer_thickness_mm, 0.005)) ** 0.25
+    speed_factor = (800.0 / max(p.scan_speed_mm_s, 50.0)) ** 0.30
+    power_factor = (max(p.laser_power_W, 1.0) / 100.0) ** 0.55
+    absorptivity_factor = p.absorptivity / 0.38
 
-    # Baseline near NiTi melting range, increased by energy input.
-    # Coefficients are deliberately conservative and transparent.
-    temp_K = (
-        1540.0
-        + 5.5 * ved
-        + 0.45 * (p.laser_power_W - 100.0)
-        - 0.018 * (p.scan_speed_mm_s - 800.0)
-        + 550.0 * (p.absorptivity - 0.35)
-        - 0.55 * (layer_um - 30.0)
-        + 0.15 * (p.build_plate_C - 80.0)
+    # Baseline near melting plus laser hot-spot superheat.
+    # The nonlinear term makes high-power/slow-speed cases move toward
+    # vaporization temperature, while moderate superelastic windows stay lower.
+    hot_T = (
+        1850.0
+        + 600.0 * power_factor * speed_factor * beam_factor * layer_factor * absorptivity_factor
+        + 4.0 * ved
+        + 900.0 * max(0.0, led - 0.12)
+        + 0.10 * (p.build_plate_C - 80.0)
     )
 
-    # Oxygen/plume effects are not solved. We add only a mild penalty because
-    # high oxygen often accompanies less stable processing.
-    temp_K += max(0.0, p.oxygen_ppm - 70.0) * 0.03
+    # Remelting means repeated exposure. It should not simply explode T,
+    # but it should increase effective evaporation severity.
+    hot_T += 60.0 * max(0, p.remelt_passes)
 
-    return _clamp(temp_K, 1550.0, 3400.0)
+    # Keep within physically reasonable screening bounds.
+    return _clamp(hot_T, 1750.0, 3850.0)
 
 
 def estimate_melt_pool_geometry_um(p: VaporizationInput) -> Dict[str, float]:
-    """
-    Estimate pool width, depth, length, surface area, and cross-section area.
-
-    The cross-section is treated as a half ellipse.
-    The top surface is treated as an ellipse.
-    """
     ved = volumetric_energy_density(
         p.laser_power_W,
         p.scan_speed_mm_s,
@@ -208,13 +198,13 @@ def estimate_melt_pool_geometry_um(p: VaporizationInput) -> Dict[str, float]:
     layer_um = p.layer_thickness_mm * 1000.0
     beam = p.beam_diameter_um
 
-    width_um = beam * (0.80 + 0.0048 * ved + 0.0012 * (p.laser_power_W - 100.0))
-    depth_um = layer_um * (1.00 + 0.0100 * ved + 0.0010 * (p.laser_power_W - 100.0))
-    length_um = width_um * (1.55 + 0.0025 * ved)
+    width_um = beam * (0.90 + 0.0045 * ved + 0.0010 * (p.laser_power_W - 100.0))
+    depth_um = layer_um * (1.15 + 0.0100 * ved + 0.0008 * (p.laser_power_W - 100.0))
+    length_um = width_um * (1.60 + 0.0025 * ved)
 
-    width_um = _clamp(width_um, 45.0, 450.0)
-    depth_um = _clamp(depth_um, max(12.0, 0.6 * layer_um), 350.0)
-    length_um = _clamp(length_um, 70.0, 1200.0)
+    width_um = _clamp(width_um, 45.0, 500.0)
+    depth_um = _clamp(depth_um, max(12.0, 0.7 * layer_um), 400.0)
+    length_um = _clamp(length_um, 70.0, 1300.0)
 
     width_m = width_um * 1e-6
     depth_m = depth_um * 1e-6
@@ -236,14 +226,8 @@ def pure_vapor_pressure_pa(element: str, temperature_K: float) -> float:
     """
     Clausius-Clapeyron vapor-pressure proxy.
 
-    P(Tb) = 1 atm is used as the anchor point.
+    Anchored by P(Tb) = 1 atm.
     """
-    if element not in BOILING_K:
-        raise ValueError(f"Unknown element: {element}")
-
-    if temperature_K <= 0:
-        return 0.0
-
     tb = BOILING_K[element]
     dh = DELTA_H_VAP_J_MOL[element]
 
@@ -259,9 +243,6 @@ def langmuir_flux_mol_m2_s(
     temperature_K: float,
     accommodation_coeff: float,
 ) -> float:
-    """
-    Langmuir evaporation flux in mol/(m^2 s).
-    """
     if partial_pressure_pa <= 0 or molar_mass_kg_mol <= 0 or temperature_K <= 0:
         return 0.0
 
@@ -273,26 +254,16 @@ def langmuir_flux_mol_m2_s(
 
 def remelting_multiplier(layer_thickness_mm: float, remelt_passes: int) -> float:
     """
-    Transparent remelting correction.
-
-    Thinner layers get more repeated thermal exposure for the same build height.
-    Explicit remelt/rescan passes are added on top.
+    Thinner layers and explicit remelting increase repeated thermal exposure.
     """
     layer_thickness_mm = max(layer_thickness_mm, 0.005)
-
     layer_factor = (0.030 / layer_thickness_mm) ** 0.45
-    explicit_pass_factor = 1.0 + max(0, remelt_passes)
+    pass_factor = 1.0 + 0.85 * max(0, remelt_passes)
 
-    return _clamp(layer_factor * explicit_pass_factor, 0.40, 8.00)
+    return _clamp(layer_factor * pass_factor, 0.40, 7.00)
 
 
 def compute_vaporization_composition(p: VaporizationInput) -> Dict[str, float]:
-    """
-    Main calculation.
-
-    Returns a dictionary with process descriptors, thermal proxy, vaporization
-    outputs, final Ni at.%, transformation-shift proxy, and risk labels.
-    """
     ved = volumetric_energy_density(
         p.laser_power_W,
         p.scan_speed_mm_s,
@@ -300,28 +271,26 @@ def compute_vaporization_composition(p: VaporizationInput) -> Dict[str, float]:
         p.layer_thickness_mm,
     )
     led = linear_energy_density(p.laser_power_W, p.scan_speed_mm_s)
-    temp_K = estimate_peak_surface_temperature_K(p)
+    temp_K = estimate_hot_surface_temperature_K(p)
     geom = estimate_melt_pool_geometry_um(p)
 
     if math.isnan(ved) or math.isnan(temp_K):
         raise ValueError("Invalid LPBF input parameters.")
 
     initial_wt = at_percent_to_wt_fractions(p.powder_Ni_at_pct)
+
     x_ni = _clamp(p.powder_Ni_at_pct / 100.0, 0.0, 1.0)
     x_ti = 1.0 - x_ni
 
-    # Ideal first-pass activity approximation.
-    # Later, replace this with CALPHAD/JMatPro/pycalphad values if available.
-    activity = {
-        "Ni": x_ni,
-        "Ti": x_ti,
-    }
+    # First-pass activity approximation.
+    activity_ni = x_ni
+    activity_ti = x_ti
 
     pure_p_ni = pure_vapor_pressure_pa("Ni", temp_K)
     pure_p_ti = pure_vapor_pressure_pa("Ti", temp_K)
 
-    partial_p_ni = pure_p_ni * activity["Ni"]
-    partial_p_ti = pure_p_ti * activity["Ti"]
+    partial_p_ni = pure_p_ni * activity_ni
+    partial_p_ti = pure_p_ti * activity_ti
 
     flux_ni = langmuir_flux_mol_m2_s(
         partial_p_ni,
@@ -356,6 +325,7 @@ def compute_vaporization_composition(p: VaporizationInput) -> Dict[str, float]:
         * cycle_factor
         * scale
     )
+
     ti_loss_rate = (
         flux_ti
         * MOLAR_MASS_KG_MOL["Ti"]
@@ -364,52 +334,48 @@ def compute_vaporization_composition(p: VaporizationInput) -> Dict[str, float]:
         * scale
     )
 
-    # Avoid impossible losses in extreme slider combinations.
-    ni_loss_rate = min(ni_loss_rate, 0.50 * initial_ni_mass_rate)
-    ti_loss_rate = min(ti_loss_rate, 0.50 * initial_ti_mass_rate)
+    # Keep extreme slider combinations numerically safe.
+    ni_loss_rate = min(ni_loss_rate, 0.65 * initial_ni_mass_rate)
+    ti_loss_rate = min(ti_loss_rate, 0.65 * initial_ti_mass_rate)
 
     final_ni_mass_rate = max(0.0, initial_ni_mass_rate - ni_loss_rate)
     final_ti_mass_rate = max(0.0, initial_ti_mass_rate - ti_loss_rate)
     final_total = final_ni_mass_rate + final_ti_mass_rate
 
-    if final_total <= 0:
-        final_ni_wt = float("nan")
-        final_ti_wt = float("nan")
-        final_ni_at = float("nan")
-    else:
-        final_ni_wt = final_ni_mass_rate / final_total
-        final_ti_wt = final_ti_mass_rate / final_total
-        final_ni_at = wt_fractions_to_ni_at_percent(final_ni_wt, final_ti_wt)
+    final_ni_wt = final_ni_mass_rate / final_total
+    final_ti_wt = final_ti_mass_rate / final_total
+    final_ni_at = wt_fractions_to_ni_at_percent(final_ni_wt, final_ti_wt)
 
     delta_ni_at = final_ni_at - p.powder_Ni_at_pct
 
-    # Current app uses a strong simplified relation:
-    # 0.1 at.% Ni increase roughly lowers transformation temperatures.
-    # Therefore Ni loss raises Af/Ms. This is a screening sensitivity only.
+    # Ni loss increases transformation temperatures.
+    # Rule of thumb: 0.1 at.% Ni loss can shift transformation temperatures upward strongly.
     predicted_transform_shift_C = -100.0 * delta_ni_at
 
-    composition_vulnerability_index = abs(predicted_transform_shift_C)
+    cvi = abs(predicted_transform_shift_C)
 
-    if composition_vulnerability_index < 5.0:
+    if cvi < 3.0:
         risk_label = "low composition-shift risk"
-    elif composition_vulnerability_index < 20.0:
+    elif cvi < 15.0:
         risk_label = "moderate composition-shift risk"
     else:
         risk_label = "high Ni-loss / transformation-shift risk"
 
-    if delta_ni_at < -0.20:
+    if delta_ni_at < -0.15:
         action = (
-            "Reduce peak thermal exposure: lower laser power, increase scan speed, "
-            "avoid unnecessary remelting, or test a thicker layer if density remains acceptable."
+            "Ni loss is meaningful. Reduce thermal exposure: lower power, increase scan speed, "
+            "avoid unnecessary remelting/rescanning, increase hatch efficiency, or recalibrate "
+            "with measured EDS/ICP and DSC."
         )
-    elif delta_ni_at > 0.05:
+    elif delta_ni_at < -0.03:
         action = (
-            "Mass balance predicts slight Ni enrichment, which is unusual for NiTi; "
-            "check calibration, composition data, and vapor-pressure assumptions."
+            "Small but visible Ni loss is predicted. This may still shift Af/Ms. "
+            "Check with DSC and composition measurement."
         )
     else:
         action = (
-            "Composition shift is small in this screening model. Verify with EDS/ICP and DSC."
+            "Predicted Ni loss is small for this condition. This is acceptable for a moderate "
+            "superelastic process window, but still verify with EDS/ICP and DSC."
         )
 
     return {
@@ -442,7 +408,7 @@ def compute_vaporization_composition(p: VaporizationInput) -> Dict[str, float]:
         "final_Ni_at_pct": final_ni_at,
         "delta_Ni_at_pct": delta_ni_at,
         "predicted_transformation_shift_C": predicted_transform_shift_C,
-        "composition_vulnerability_index_C": composition_vulnerability_index,
+        "composition_vulnerability_index_C": cvi,
         "risk_label": risk_label,
         "recommended_action": action,
     }
@@ -453,10 +419,6 @@ def sweep_power_speed(
     powers_W: List[float],
     speeds_mm_s: List[float],
 ) -> List[Dict[str, float]]:
-    """
-    Create a power-speed map while keeping hatch, layer thickness, composition,
-    remelting, beam diameter, absorptivity, and calibration fixed.
-    """
     rows: List[Dict[str, float]] = []
 
     for power in powers_W:
